@@ -49,6 +49,7 @@ export class FacebookService implements Facebook.UploadVideo {
     uploadSessionID: string,
   ): Facebook.FinishResponse {
     let finishResponse;
+
     this.httpService
       .post(
         `https://graph-video.facebook.com/v13.0/1755847768034402/videos?upload_phase=finish&access_token=${accessToken}&upload_session_id=${uploadSessionID}`,
@@ -61,6 +62,7 @@ export class FacebookService implements Facebook.UploadVideo {
           finishResponse = response.data as Facebook.FinishResponse;
         }),
       );
+
     return finishResponse;
   }
 
