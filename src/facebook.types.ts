@@ -6,12 +6,14 @@ export declare namespace Facebook {
       accessToken: string,
       fileName: string,
     ): Promise<[Observable<StartResponse>, number]>;
+
     transfer(
       accessToken: string,
       uploadSessionID: string,
       startOffset: string,
       videoFileChunk: string,
-    ): TransferResponse;
+    ): Promise<void>;
+
     finish(accessToken: string, uploadSessionID: string): FinishResponse;
   }
 

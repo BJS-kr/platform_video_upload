@@ -7,7 +7,8 @@ import { Facebook } from './facebook.types';
 @Injectable()
 export class FacebookService implements Facebook.UploadVideo {
   constructor(private readonly httpService: HttpService) {}
-  private async start(
+
+  public async start(
     accessToken: string,
     fileName: string,
   ): Promise<[Observable<Facebook.StartResponse>, number]> {
@@ -43,10 +44,11 @@ export class FacebookService implements Facebook.UploadVideo {
     // result의 첫째 값: video_id = 업로드한 비디오의 최종적 id
   }
 
-  private finish(
+  public finish(
     accessToken: string,
     uploadSessionID: string,
   ): Facebook.FinishResponse {
+    let finishResponse;
     this.httpService
       .post(
         `https://graph-video.facebook.com/v13.0/1755847768034402/videos?upload_phase=finish&access_token=${accessToken}&upload_session_id=${uploadSessionID}`,
@@ -56,26 +58,19 @@ export class FacebookService implements Facebook.UploadVideo {
           throw new InternalServerErrorException(error.response.data);
         }),
         map((response) => {
-          const isSuccess = (response.data as Facebook.FinishResponse).success;
-          if (isSuccess) {
-            console.log('video upload finished');
-          } else {
-            console.log('video upload has not finished:', isSuccess);
-          }
+          finishResponse = response.data as Facebook.FinishResponse;
         }),
       );
+    return finishResponse;
   }
 
-  public async transfer(
-    accessToken: string,
-    fileName: string,
-  ): Promise<Facebook.TransferResponse> {
+  public async transfer(accessToken: string, fileName: string): Promise<void> {
     const [startResponse, fileSize] = await this.start(accessToken, fileName);
 
-    let startOffset;
-    let endOffset;
-    let uploadSessionID;
-    let videoId;
+    let startOffset: string;
+    let endOffset: string;
+    let uploadSessionID: string;
+    let videoId: string;
     let chunkCount = 0;
 
     startResponse.forEach((response) => {
@@ -91,10 +86,11 @@ export class FacebookService implements Facebook.UploadVideo {
         throw err;
       })
       .on('data', (chunk) => {
-        writeFile(`./chunk_${++chunkCount}`, chunk, () => {
+        ++chunkCount;
+        writeFile(`./chunk`, chunk, () => {
           this.httpService
             .post(
-              `https://graph-video.facebook.com/v13.0/1755847768034402/videos?upload_phase=transfer&access_token=${accessToken}&upload_session_id=${uploadSessionID}&start_offset=${startOffset}&video_file_chunk=@./chunk_${chunkCount}`,
+              `https://graph-video.facebook.com/v13.0/1755847768034402/videos?upload_phase=transfer&access_token=${accessToken}&upload_session_id=${uploadSessionID}&start_offset=${startOffset}&video_file_chunk=@./chunk`,
             )
             .pipe(
               catchError((error) => {
@@ -111,10 +107,18 @@ export class FacebookService implements Facebook.UploadVideo {
       .on('end', () => {
         if (startOffset === endOffset && String(fileSize) === endOffset) {
           console.log('video upload complete, go for finish');
+          const isSuccess = this.finish(accessToken, uploadSessionID).success;
+          if (isSuccess) {
+            console.log(`video upload succeeded: ${isSuccess}`);
+            console.log(`your uploaded video id is ${videoId}`);
+          } else {
+            throw new InternalServerErrorException(
+              `video upload not succeeded: ${isSuccess}`,
+            );
+          }
         } else {
-          console.log('something has gone wrong');
+          throw new InternalServerErrorException('something has gone wrong');
         }
-        this.finish(accessToken, uploadSessionID);
       });
   }
 }
