@@ -43,6 +43,29 @@ export class FacebookService implements Facebook.UploadVideo {
     // result의 첫째 값: video_id = 업로드한 비디오의 최종적 id
   }
 
+  private finish(
+    accessToken: string,
+    uploadSessionID: string,
+  ): Facebook.FinishResponse {
+    this.httpService
+      .post(
+        `https://graph-video.facebook.com/v13.0/1755847768034402/videos?upload_phase=finish&access_token=${accessToken}&upload_session_id=${uploadSessionID}`,
+      )
+      .pipe(
+        catchError((error) => {
+          throw new InternalServerErrorException(error.response.data);
+        }),
+        map((response) => {
+          const isSuccess = (response.data as Facebook.FinishResponse).success;
+          if (isSuccess) {
+            console.log('video upload finished');
+          } else {
+            console.log('video upload has not finished:', isSuccess);
+          }
+        }),
+      );
+  }
+
   public async transfer(
     accessToken: string,
     fileName: string,
@@ -87,15 +110,11 @@ export class FacebookService implements Facebook.UploadVideo {
       })
       .on('end', () => {
         if (startOffset === endOffset && String(fileSize) === endOffset) {
-          console.log('video upload complete');
+          console.log('video upload complete, go for finish');
         } else {
-          console.log('something gone wrong');
+          console.log('something has gone wrong');
         }
+        this.finish(accessToken, uploadSessionID);
       });
   }
-
-  public finish(
-    accessToken: string,
-    uploadSessionID: string,
-  ): Facebook.FinishResponse {}
 }
