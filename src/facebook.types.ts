@@ -5,7 +5,7 @@ export declare namespace Facebook {
     start(
       accessToken: string,
       fileName: string,
-    ): Promise<Observable<StartResponse>>;
+    ): Promise<[Observable<StartResponse>, number]>;
     transfer(
       accessToken: string,
       uploadSessionID: string,
