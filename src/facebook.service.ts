@@ -80,7 +80,7 @@ export class FacebookService implements Facebook.UploadVideo {
     });
 
     // https://stackoverflow.com/questions/10859374/curl-f-what-does-it-mean-php-instagram
-    createReadStream('./test.mp4')
+    createReadStream(`user_file_path/${fileName}`)
       .on('error', (err) => {
         console.error(`error on uploading chunk count:${chunkCount}`);
         throw err;
