@@ -8,4 +8,4 @@ import { FacebookService } from './facebook.service';
   controllers: [AppController],
   providers: [FacebookService],
 })
-export class AppModule {}
+export class FacebookModule {}

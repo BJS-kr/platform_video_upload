@@ -3,10 +3,50 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { createReadStream, stat, writeFile } from 'fs';
 import { catchError, map, Observable } from 'rxjs';
 import { Facebook } from './facebook.types';
-
+import { request, RequestOptions } from 'https';
+import * as FormData from 'form-data';
 @Injectable()
 export class FacebookService implements Facebook.UploadVideo {
   constructor(private readonly httpService: HttpService) {}
+
+  public async getPageID(
+    accessToken: string,
+    pageName: string,
+  ): Promise<string> {
+    let pageID: string;
+
+    const requestOptions: RequestOptions = {
+      protocol: 'https:',
+      hostname: 'graph.facebook.com',
+      path: `/v13.0/me/accounts?access_token=${accessToken}`,
+      method: 'GET',
+    };
+
+    await new Promise((resolve, reject) => {
+      const req = request(requestOptions, (res) => {
+        if (res.statusCode !== 200) {
+          reject('response status code is not 200');
+        }
+
+        res
+          .on('error', (e) => {
+            throw e;
+          })
+          .on('data', (resChunk) => {
+            const result = JSON.parse(resChunk) as Facebook.getPageIDResponse;
+            if (result.data[0].name === pageName) {
+              resolve((pageID = result.data[0].id));
+            }
+          });
+      });
+
+      req.end();
+    }).catch((rej) => {
+      throw new Error(rej);
+    });
+
+    return pageID;
+  }
 
   public async start(
     accessToken: string,

@@ -15,6 +15,8 @@ export declare namespace Facebook {
     ): Promise<void>;
 
     finish(accessToken: string, uploadSessionID: string): FinishResponse;
+
+    getPageID(accessToken: string, pageName: string): Promise<string>;
   }
 
   type StartResponse = {
