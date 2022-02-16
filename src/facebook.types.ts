@@ -32,4 +32,30 @@ export declare namespace Facebook {
   type FinishResponse = {
     success: boolean;
   };
+
+  type Tasks =
+    | 'ANALYZE'
+    | 'ADVERTISE'
+    | 'MESSAGING'
+    | 'MODERATE'
+    | 'CREATE_CONTENT'
+    | 'MANAGE';
+
+  type Category = { id: string; name: string };
+
+  type Data = {
+    access_token: string;
+    category: string;
+    category_list: Category[];
+    name: string;
+    id: string;
+    tasks: Tasks[];
+  };
+
+  type Cursors = { before: string; after: string };
+
+  type getPageIDResponse = {
+    data: Data[];
+    paging: { cursors: Cursors };
+  };
 }
