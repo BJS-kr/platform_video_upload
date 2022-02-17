@@ -32,7 +32,6 @@ export class FacebookService implements Facebook.UploadVideo {
     await new Promise((res, rej) => {
       request(requestOptions, (response) => {
         if (response.statusCode !== 200) {
-          console.log(response.statusCode);
           throw new BadRequestException(
             'GraphAPI responded error status on given options',
           );
@@ -121,7 +120,6 @@ export class FacebookService implements Facebook.UploadVideo {
             throw new InternalServerErrorException(error);
           })
           .on('data', (responseChunk) => {
-            console.log(JSON.parse(responseChunk));
             res(
               (startResponse = JSON.parse(
                 responseChunk,
