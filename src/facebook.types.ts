@@ -1,11 +1,10 @@
-import { Observable } from 'rxjs';
-
 export declare namespace Facebook {
   interface UploadVideo {
     start(
       accessToken: string,
       fileName: string,
-    ): Promise<[Observable<StartResponse>, number]>;
+      pageId: string,
+    ): Promise<[StartResponse, number]>;
 
     transfer(
       accessToken: string,
@@ -14,9 +13,13 @@ export declare namespace Facebook {
       videoFileChunk: string,
     ): Promise<void>;
 
-    finish(accessToken: string, uploadSessionID: string): FinishResponse;
+    finish(
+      accessToken: string,
+      uploadSessionID: string,
+      pageId: string,
+    ): Promise<FinishResponse>;
 
-    getPageID(accessToken: string, pageName: string): Promise<string>;
+    getPageId(accessToken: string, pageName: string): Promise<string>;
   }
 
   type StartResponse = {
@@ -35,14 +38,6 @@ export declare namespace Facebook {
     success: boolean;
   };
 
-  type Tasks =
-    | 'ANALYZE'
-    | 'ADVERTISE'
-    | 'MESSAGING'
-    | 'MODERATE'
-    | 'CREATE_CONTENT'
-    | 'MANAGE';
-
   type Category = { id: string; name: string };
 
   type Data = {
@@ -51,12 +46,12 @@ export declare namespace Facebook {
     category_list: Category[];
     name: string;
     id: string;
-    tasks: Tasks[];
+    tasks: string[];
   };
 
   type Cursors = { before: string; after: string };
 
-  type getPageIDResponse = {
+  type GetAccountResponse = {
     data: Data[];
     paging: { cursors: Cursors };
   };
