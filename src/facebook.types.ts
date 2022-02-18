@@ -1,25 +1,25 @@
 export declare namespace Facebook {
-  interface UploadVideo {
-    start(
+  class UploadVideo {
+    protected start(
       accessToken: string,
       fileName: string,
       pageId: string,
     ): Promise<[StartResponse, number]>;
 
-    transfer(
+    public transfer(
       accessToken: string,
       uploadSessionID: string,
       startOffset: string,
       videoFileChunk: string,
     ): Promise<void>;
 
-    finish(
+    protected finish(
       accessToken: string,
       uploadSessionID: string,
       pageId: string,
     ): Promise<FinishResponse>;
 
-    getPageId(accessToken: string, pageName: string): Promise<string>;
+    protected getPageId(accessToken: string, pageName: string): Promise<string>;
   }
 
   type StartResponse = {

@@ -9,8 +9,11 @@ import { request, RequestOptions } from 'https';
 import * as FormData from 'form-data';
 
 @Injectable()
-export class FacebookService implements Facebook.UploadVideo {
-  public async getPageId(
+export class FacebookService extends Facebook.UploadVideo {
+  constructor() {
+    super();
+  }
+  protected async getPageId(
     accessToken: string,
     pageName: string,
   ): Promise<string> {
@@ -68,7 +71,7 @@ export class FacebookService implements Facebook.UploadVideo {
     }
   }
 
-  public async start(
+  protected async start(
     accessToken: string,
     fileName: string,
     pageId: string,
@@ -140,7 +143,7 @@ export class FacebookService implements Facebook.UploadVideo {
     // result의 첫째 값: video_id = 업로드한 비디오의 최종적 id
   }
 
-  public async finish(
+  protected async finish(
     accessToken: string,
     uploadSessionID: string,
     pageId: string,
