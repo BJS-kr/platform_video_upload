@@ -227,7 +227,11 @@ export class FacebookService extends Facebook.UploadVideo {
     let transferredSize = 0;
 
     // https://stackoverflow.com/questions/10859374/curl-f-what-does-it-mean-php-instagram
-    createReadStream(`/Users/james/Desktop/${fileName}`)
+    const readStream = createReadStream(`/Users/james/Desktop/${fileName}`, {
+      highWaterMark: transferableSize,
+    });
+
+    readStream
       .on('error', (err) => {
         console.error(`error on uploading chunk count:${chunkCount}`);
         throw err;
@@ -237,7 +241,7 @@ export class FacebookService extends Facebook.UploadVideo {
           chunks.push(chunk);
         } else {
           throw new InternalServerErrorException(
-            'Data chunk is not a Bufffer object',
+            'Data chunk is not a Buffer object',
           );
         }
         ++chunkCount;
@@ -247,6 +251,7 @@ export class FacebookService extends Facebook.UploadVideo {
           currentBufferSize >= transferableSize ||
           fileSize - transferredSize <= 65536
         ) {
+          readStream.pause();
           formData.append('start_offset', startOffset);
           formData.append('video_file_chunk', Buffer.concat(chunks));
 
@@ -271,6 +276,7 @@ export class FacebookService extends Facebook.UploadVideo {
           });
 
           formData.pipe(req);
+          readStream.resume();
         }
       })
       .on('end', async () => {
