@@ -1,302 +1,218 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
-import { createReadStream, stat } from 'fs';
-import { Facebook } from './facebook.types';
-import { request, RequestOptions } from 'https';
+import * as AWS from 'aws-sdk';
+import * as Axios from 'axios';
 import * as FormData from 'form-data';
 
-@Injectable()
-export class FacebookService extends Facebook.UploadVideo {
-  constructor() {
-    super();
+class FacebookService {
+  private readonly userAccessToken = process.env.FACEBOOK_USER_ACCESS_TOKEN;
+  private readonly accontsInformationURL = `https://graph.facebook.com/v13.0/me/accounts?fields=access_token%2Cid%2Cname&access_token=${this.userAccessToken}`;
+  private readonly pageName = process.env.FACEBOOK_PAGE_NAME;
+  private readonly bucket = process.env.BUCKET;
+  private readonly s3 = new AWS.S3();
+  private readonly axios = Axios.default;
+  private readonly formDataHeader = {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  };
+  
+  private makePageContentControlURLByPageId(pageId: string) {
+    return `https://graph-video.facebook.com/v13.0/${pageId}/videos`;
   }
-  protected async getPageId(
-    accessToken: string,
-    pageName: string,
-  ): Promise<string> {
-    if (!accessToken) {
-      throw new BadRequestException('access token needed');
-    }
-    if (!pageName) {
-      throw new BadRequestException('page name needed');
-    }
 
-    let pageId: string | null = null;
-
-    const requestOptions: RequestOptions = {
-      host: 'graph.facebook.com',
-      path: `/v13.0/me/accounts?access_token=${accessToken}`,
-      method: 'GET',
-    };
-
-    await new Promise((res, rej) => {
-      request(requestOptions, (response) => {
-        if (response.statusCode !== 200) {
-          throw new BadRequestException(
-            'GraphAPI responded error status on given options',
-          );
-        }
-
-        response
-          .on('error', (error) => {
-            throw new InternalServerErrorException(error);
-          })
-          .on('data', (responseChunk) => {
-            const responseData = JSON.parse(
-              responseChunk,
-            ) as Facebook.GetAccountResponse;
-
-            const matchingData = responseData.data.find((eachData) => {
-              return eachData.name === pageName;
-            });
-
-            matchingData
-              ? res((pageId = matchingData.id))
-              : rej(
-                  'given page name data not exists on GraphAPI Account informations',
-                );
-          });
-      }).end();
-    }).catch((rej) => {
-      throw new BadRequestException(rej);
+  private sleep(sec: number) {
+    return new Promise((res) => {
+      setTimeout(() => res(true), sec * 1000);
     });
+  }
 
-    if (pageId) {
-      return pageId;
-    } else {
-      throw new InternalServerErrorException('pageId null');
+  private sizeOf(key: string) {
+    return this.s3.headObject({ Key: key, Bucket: this.bucket }).promise();
+  }
+
+  private makeVideosReadStreamFromS3(s3Key: string) {
+    return this.s3
+      .getObject({ Key: s3Key, Bucket: this.bucket })
+      .createReadStream();
+  }
+
+  protected async getPageIdAndAccessToken(): Promise<
+    readonly [string, string]
+  > {
+    if (!this.userAccessToken) {
+      throw new Error('facebook access token needed');
     }
+
+    if (!this.pageName) {
+      throw new Error('facebook page name needed');
+    }
+
+    const responseData = (await this.axios.get(this.accontsInformationURL))
+      .data;
+    const pageData = responseData.data.find(
+      (pageData: any) => pageData.name === this.pageName
+    );
+    if (!pageData) throw new Error('given page name does not exists');
+    return [pageData.id, pageData.access_token];
   }
 
   protected async start(
     accessToken: string,
     fileName: string,
-    pageId: string,
-  ): Promise<[Facebook.StartResponse, number]> {
-    let fileSize: number | null = null;
-    let startResponse: Facebook.StartResponse | null = null;
-
-    await new Promise((res) => {
-      stat(`/Users/james/Desktop/${fileName}`, (error, stats) => {
-        if (error) throw error;
-        res(stats.size);
-      });
-    })
-      .then((size) => {
-        // size는 stats.size이므로 언제나 number입니다.
-        fileSize = size as number;
-      })
-      .catch((error: NodeJS.ErrnoException) => {
-        throw error;
-      });
-
-    const formData = new FormData();
+    pageId: string
+  ): Promise<[any, number]> {
+    const fileSize = (await this.sizeOf(fileName)).ContentLength;
 
     if (fileSize) {
-      formData.append('upload_phase', 'start');
-      formData.append('access_token', accessToken);
-      formData.append('file_size', fileSize);
-    } else {
-      throw new InternalServerErrorException('fileSize null');
-    }
+      const startParams = {
+        upload_phase: 'start',
+        access_token: accessToken,
+        file_size: fileSize,
+      };
+      const startResponse = (
+        await this.axios.post(
+          this.makePageContentControlURLByPageId(pageId),
+          startParams,
+          this.formDataHeader
+        )
+      ).data;
+      console.log('startResponse: ', startResponse);
 
-    const requestOptions: RequestOptions = {
-      host: 'graph.facebook.com',
-      path: `/v13.0/${pageId}/videos`,
-      method: 'POST',
-      headers: formData.getHeaders(),
-    };
-
-    await new Promise((res) => {
-      const req = request(requestOptions, (response) => {
-        if (response.statusCode !== 201) {
-          throw new BadRequestException(
-            'GraphAPI responded error status on given options',
-          );
-        }
-
-        response
-          .on('error', (error) => {
-            throw new InternalServerErrorException(error);
-          })
-          .on('data', (responseChunk) => {
-            res(
-              (startResponse = JSON.parse(
-                responseChunk,
-              ) as Facebook.StartResponse),
-            );
-          });
-      });
-
-      formData.pipe(req);
-    });
-
-    if (startResponse) {
       return [startResponse, fileSize];
     } else {
-      throw new InternalServerErrorException('startResponse null');
+      throw new Error('facebook upload fileSize null');
     }
-
-    // result의 첫째 값: video_id = 업로드한 비디오의 최종적 id
   }
 
   protected async finish(
     accessToken: string,
     uploadSessionID: string,
-    pageId: string,
-  ): Promise<Facebook.FinishResponse> {
-    let finishResponse: Facebook.FinishResponse | null = null;
-
-    const formData = new FormData();
-
-    formData.append('upload_phase', 'finish');
-    formData.append('access_token', accessToken);
-    formData.append('upload_session_id', uploadSessionID);
-
-    const requestOptions: RequestOptions = {
-      host: 'graph.facebook.com',
-      path: `/v13.0/${pageId}/videos`,
-      method: 'POST',
-      headers: formData.getHeaders(),
+    pageId: string
+  ): Promise<any> {
+    const finishParams = {
+      upload_phase: 'finish',
+      access_token: accessToken,
+      upload_session_id: uploadSessionID,
     };
 
-    await new Promise((res) => {
-      const req = request(requestOptions, (response) => {
-        if (response.statusCode !== 201) {
-          throw new BadRequestException(
-            'GraphAPI responded error status on given options',
-          );
-        }
+    const finishResponse = (
+      await this.axios.post(
+        this.makePageContentControlURLByPageId(pageId),
+        finishParams,
+        this.formDataHeader
+      )
+    ).data;
+    console.log('finishResponse: ', finishResponse);
 
-        response
-          .on('error', (error) => {
-            throw new InternalServerErrorException(error);
-          })
-          .on('data', (responseChunk) => {
-            res(
-              (finishResponse = JSON.parse(
-                responseChunk,
-              ) as Facebook.FinishResponse),
-            );
-          });
-      });
+    if (!finishResponse.success)
+      throw new Error('GraphAPI responded error status on given options');
 
-      formData.pipe(req);
-    });
-
-    if (finishResponse) {
-      return finishResponse;
-    } else {
-      throw new InternalServerErrorException('finishResponse null');
-    }
+    return finishResponse;
   }
 
-  public async transfer(
-    accessToken: string,
-    fileName: string,
-    pageName: string,
-  ): Promise<void> {
-    const pageId = await this.getPageId(accessToken, pageName);
+  public async transfer(fileName: string) {
+    const [pageId, accessToken] = await this.getPageIdAndAccessToken();
+
     const [startResponse, fileSize] = await this.start(
       accessToken,
       fileName,
-      pageId,
+      pageId
     );
-    const transferableSize = 5 * 1024 * 1024 - 65536; // 5MB - 64KB(data stream chunk size)
-    const uploadSessionID = startResponse.uploadSessionID;
-    const videoId = startResponse.videoId;
-    const requestOptions: RequestOptions = {
-      host: 'graph.facebook.com',
-      path: `/v13.0/${pageId}/videos`,
-      method: 'POST',
-    };
-    const formData = new FormData();
 
-    formData.append('upload_phase', 'transfer');
-    formData.append('access_token', accessToken);
-    formData.append('upload_session_id', uploadSessionID);
+    const videoReadStream = this.makeVideosReadStreamFromS3(fileName);
+    const highWaterMark = videoReadStream.readableHighWaterMark;
+    const _4MB = 4000000;
+    const closestTo4MB = Math.floor(_4MB / highWaterMark) * highWaterMark;
+    const transferableSize = closestTo4MB > fileSize ? fileSize : closestTo4MB;
+    const uploadSessionID = startResponse.upload_session_id;
+    const videoId = startResponse.video_id;
 
-    let startOffset = startResponse.startOffset;
-    let endOffset: string;
+    let isFinished = false;
+    let startOffset = startResponse.start_offset;
+    let endOffset = startResponse.end_offset;
     let chunkCount = 0;
     let chunks: Buffer[] = [];
     let currentBufferSize = 0;
     let transferredSize = 0;
 
     // https://stackoverflow.com/questions/10859374/curl-f-what-does-it-mean-php-instagram
-    const readStream = createReadStream(`/Users/james/Desktop/${fileName}`, {
-      highWaterMark: transferableSize,
-    });
-
-    readStream
-      .on('error', (err) => {
-        console.error(`error on uploading chunk count:${chunkCount}`);
-        throw err;
+    videoReadStream
+      .on('error', (error) => {
+        throw new Error(error.message);
       })
-      .on('data', (chunk) => {
+      .on('data', async (chunk) => {
         if (chunk instanceof Buffer) {
           chunks.push(chunk);
         } else {
-          throw new InternalServerErrorException(
-            'Data chunk is not a Buffer object',
-          );
+          throw new Error('Data chunk is not a Bufffer object');
         }
         ++chunkCount;
         currentBufferSize += chunk.length;
 
         if (
           currentBufferSize >= transferableSize ||
-          fileSize - transferredSize <= 65536
+          fileSize - transferredSize === currentBufferSize
         ) {
-          readStream.pause();
-          formData.append('start_offset', startOffset);
-          formData.append('video_file_chunk', Buffer.concat(chunks));
+          videoReadStream.pause();
 
-          requestOptions.headers = formData.getHeaders();
+          const transferParams = new FormData();
 
-          const req = request(requestOptions, (response) => {
-            response
-              .on('error', (error) => {
-                throw error;
-              })
-              .on('data', (responseChunk) => {
-                const transferResponse = JSON.parse(
-                  responseChunk,
-                ) as Facebook.TransferResponse;
-                startOffset = transferResponse.startOffset;
-                endOffset = transferResponse.endOffset;
-              });
+          transferParams.append('upload_phase', 'transfer');
+          transferParams.append('access_token', accessToken);
+          transferParams.append('upload_session_id', uploadSessionID);
+          transferParams.append('start_offset', startOffset);
+          transferParams.append(
+            'video_file_chunk',
+            Buffer.concat(chunks),
+            `chunk${chunkCount}`
+          );
 
-            transferredSize += currentBufferSize;
-            chunks = [];
-            currentBufferSize = 0;
-          });
+          const transferRes = await this.axios
+            .post(
+              this.makePageContentControlURLByPageId(pageId),
+              transferParams,
+              this.formDataHeader
+            )
+            .catch((x) => console.error(x.response.data));
+          const transferResponse = (transferRes && transferRes.data) || false;
+          if (!transferResponse) throw 'maybe transferRes is void';
+          console.log('transferResponse: ', transferResponse);
 
-          formData.pipe(req);
-          readStream.resume();
+          endOffset = transferResponse.end_offset;
+          startOffset = transferResponse.start_offset;
+
+          transferredSize += currentBufferSize;
+          if (transferredSize >= fileSize) isFinished = true;
+
+          chunks = [];
+          currentBufferSize = 0;
+
+          videoReadStream.resume();
         }
       })
       .on('end', async () => {
-        if (startOffset === endOffset && String(fileSize) === endOffset) {
-          console.log('video upload complete, go for finish');
+        let elapsed = 0;
 
+        while (!isFinished) {
+          await this.sleep(1);
+          elapsed++;
+          if (elapsed > 15)
+            throw new Error(
+              '15 secs elapsed since video stream ended remain state: not finished'
+            );
+        }
+
+        if (startOffset === endOffset && String(fileSize) === endOffset) {
           const isSuccess = (
-            await this.finish(accessToken, uploadSessionID, pageId)
+            (await this.finish(accessToken, uploadSessionID, pageId)) as any
           ).success;
 
-          if (isSuccess) {
-            console.log(`video upload succeeded: ${isSuccess}`);
-            console.log(`your uploaded video id is ${videoId}`);
-          } else {
-            throw new InternalServerErrorException(
-              `video upload not succeeded: ${isSuccess}`,
-            );
+          if (!isSuccess) {
+            throw new Error(`video upload not succeeded: ${isSuccess}`);
           }
+
+          console.log(`uploaded video id is ${videoId}`);
         } else {
-          throw new InternalServerErrorException('something has gone wrong');
+          throw new Error('end offset not matches to file size');
         }
       });
   }
